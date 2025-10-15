@@ -70,6 +70,7 @@ app.get("/update_props", (req, res) => {
     res.json(latestUpdatesProp);   // return all stored updates 
 });
 
+
 // --- SOUND EVENTS ---
 // POST route: GMod sends when a sound plays
 app.post("/sound", (req, res) => {
@@ -95,6 +96,7 @@ app.get("/sound", (req, res) => {
     res.json(latestSounds);
     latestSounds = [];
 });
+
 
 // --- In-memory trace storage ---
 var traceAttacks = [];
