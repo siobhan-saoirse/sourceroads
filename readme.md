@@ -20,6 +20,7 @@ Not much right now, games can connect fine for the most part and you can see and
 * [ ] See props/objects from other games.
 * [ ] Syncronise gamemodes (ctf, cp, tdm, etc).
 * [ ] Freely switch between maps.
+* [ ] Ragdolls
 
 ## How can I help?
 
