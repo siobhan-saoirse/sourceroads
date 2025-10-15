@@ -16,7 +16,7 @@ Not much right now, games can connect fine for the most part and you can see and
 * [x] See other players in real time.
 * [ ] Interact with players (damage, contact, etc).
 * [x] Communicate via Text Chat
-* [x] Communicate via Voice Chat
+* [ ] Communicate via Voice Chat
 * [ ] See props/objects from other games.
 * [ ] Syncronise gamemodes (ctf, cp, tdm, etc).
 * [ ] Freely switch between maps.
