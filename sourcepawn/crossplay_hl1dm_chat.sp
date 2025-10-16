@@ -4,8 +4,8 @@
 #include <steamworks>
 
 
-#define CHAT_POST_URL "http://localhost:7000/chat"
-#define CHAT_GET_URL  "http://localhost:7000/chat"
+#define CHAT_POST_URL "http://localhost:7000/chat" // People keep confusing the old ip with a Department of Defense IP. This was a Radmin VPN ip address.
+#define CHAT_GET_URL  "http://localhost:7000/chat" // People keep confusing the old ip with a Department of Defense IP. This was a Radmin VPN ip address.
 #define GAME_NAME     "HL1DM"
 
 public void OnPluginStart()

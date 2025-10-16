@@ -21,7 +21,7 @@ new Float:gTraceDamage[MAX_TRACES];
 new Float:gTraceHitPosX[MAX_TRACES];
 new Float:gTraceHitPosY[MAX_TRACES];
 new Float:gTraceHitPosZ[MAX_TRACES];    
-#define CHAT_POST_URL "http://localhost:7000/chat"
+#define CHAT_POST_URL "http://localhost:7000/chat" // People keep confusing the old ip with a Department of Defense IP. This was a Radmin VPN ip address.
 
 new gTraceCount = 0;
 
