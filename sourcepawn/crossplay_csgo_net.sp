@@ -1,6 +1,8 @@
 #include <sourcemod>
 #include <sdktools>
+#include <sdkhooks>
 #include <steamworks>
+#include <cstrike>
 
 #define UPDATE_URL "http://localhost:2634/update_gmod"
 #define TF_UPDATE_URL "http://localhost:2634/update"
@@ -33,6 +35,7 @@ char gPlayerWeapons[MAX_PLAYERS][MAX_MODEL_LEN];
 int gWeaponProps[MAX_PLAYERS];
 bool activePlayers[MAX_PLAYERS];
 bool activeProps[MAX_PROPS];
+bool 
 
 int gPlayerEnts2[MAX_PLAYERS];
 float gPlayerPos2[MAX_PLAYERS][3];
@@ -49,7 +52,7 @@ char gPlayerWeapons3[MAX_PLAYERS][MAX_MODEL_LEN];
 bool activePlayers3[MAX_PLAYERS];
 
 Handle g_SDKCallStudioFrameAdvance = null;
-
+bool g_bIsThinkingTF = false;
 // --- Prop storage (new) ---
 int gPropEnts[MAX_PROPS];
 char gPropIds[MAX_PROPS][32];              // unique id from JSON (string)
@@ -385,12 +388,22 @@ public void OnMapStart()
     PrecacheModel("models/kleiner.mdl");
     PrecacheModel("models/combine_super_soldier.mdl"); 
     CreateTimer(UPDATE_INTERVAL, Timer_SendUpdates, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-    CreateTimer(UPDATE_INTERVAL, Timer_SendUpdatesTF, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+    CreateTimer(0.01, Timer_SendUpdatesTF, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
     CreateTimer(UPDATE_INTERVAL, Timer_SendUpdatesTERROR, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
     CreateTimer(0.1, Timer_CheckSounds, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
     PrintToServer("[Socket.IO] Position sync started (interval: %.2f sec)", UPDATE_INTERVAL);
+    
 }
 
+public OnClientPutInServer(client)
+{
+    SDKHook(client, SDKHook_PreThink, SDKHooks_OnPreThink);
+}
+public SDKHooks_OnPreThink(client)
+{
+    
+
+}
 // --- Timer to fetch updates (players + props) ---
 public Action Timer_SendUpdates(Handle timer)
 {
@@ -424,7 +437,6 @@ public Action Timer_SendUpdatesTF(Handle timer)
         SteamWorks_SetHTTPCallbacks(hRequest, OnHTTPResponse2);
         SteamWorks_SendHTTPRequest(hRequest);
     }
-
     return Plugin_Continue;
 }
 public Action Timer_SendUpdatesTERROR(Handle timer)
@@ -786,8 +798,9 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
         char model[MAX_MODEL_LEN]; model[0] = '\0';
         char weaponModel[MAX_MODEL_LEN]; weaponModel[0] = '\0';
         float x = 0.0, y = 0.0, z = 0.0;
+        float velx = 0.0, vely = 0.0, velz = 0.0;
         float pitch = 0.0, yaw = 0.0, roll = 0.0;
-        int skin = 0, animation = 0;
+        int skin = 0, animation = 0, team =0;
         int sequence = 0;
         float modelscale = 1.0;
 
@@ -808,7 +821,12 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
         roll = ExtractJSONFloat(entry, "roll");
         skin = ExtractJSONInt(entry, "skin");
         animation = ExtractJSONInt(entry, "animation");
-        sequence = ExtractJSONInt(entry, "sequence");
+        sequence = ExtractJSONInt(entry, "animation");
+        team = ExtractJSONInt(entry, "team");
+        velx = ExtractJSONFloat(entry, "velx");
+        vely = ExtractJSONFloat(entry, "vely");
+        velz = ExtractJSONFloat(entry, "velz"); 
+        int health = ExtractJSONInt(entry, "health");
 
         // optional scale key (key name "scale" used by GMod; accept both)
         float maybeScale = ExtractJSONFloat(entry, "scale");
@@ -835,7 +853,7 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
                 char classname[64];
                 GetEntityClassname(i, classname, sizeof(classname));
 
-                if (StrEqual(classname, "prop_dynamic_override"))
+                if (StrEqual(classname, "player"))
                 {
                     char existingName[64];
                     GetEntPropString(i, Prop_Data, "m_iName", existingName, sizeof(existingName));
@@ -852,10 +870,15 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
                 }
             }
 
-            if (ent == 0)
+            if (ent == 0)   
             {
                 // No existing entity, create a new one
-                ent = CreateEntityByName("prop_dynamic_override");
+                ent = CreateFakeClient(name);
+                if (ent != 0)
+                {
+                    ChangeClientTeam(ent,team);
+                }
+                CS_RespawnPlayer(ent);
                 if (ent <= 0)
                 {
                     PrintToServer("[SYNC] CreateEntityByName failed for '%s' (ent=%d)", name, ent);
@@ -871,21 +894,35 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
                 if (!IsModelPrecached(model))  {
                     PrecacheModel(model);
                 }
-                SetEntityModel(ent, "models/characters/hostage_01.mdl");
+                SetEntityModel(ent, model); 
                         if (idx == -1)
                         {
                             idx = ent;
                         }
+                DispatchSpawn(ent)
+                ActivateEntity(ent)
             }
 
-            // set solid type & clientside animation (only once; avoid repeating to reduce flicker)
             SetEntProp(ent, Prop_Send, "m_nSolidType", 2);
             SetEntProp(ent, Prop_Data, "m_nSolidType", 2);
-            SetEntProp(ent, Prop_Send, "m_bClientSideAnimation", true);
-
+            if (GetClientTeam(ent) != team) {
+                ChangeClientTeam(ent,team);
+            }
+            if (ent != 0) {
+                SetEntProp(ent, Prop_Data, "m_iHealth", health);
+                SetEntProp(ent, Prop_Send, "m_iHealth", health);
+            }
             float tpos[3]; tpos[0] = x; tpos[1] = y; tpos[2] = z;
             float tang[3]; tang[0] = pitch; tang[1] = yaw; tang[2] = roll;
-            SafeTeleportSchedule(ent, tpos, tang, NULL_VECTOR);
+            float velpos[3]; velpos[0] = velx; velpos[1] = vely; velpos[2] = velz;
+
+            float pPos[3];
+            GetClientAbsOrigin(ent, pPos);
+            SafeTeleportSchedule(ent, tpos, tang, velpos);
+                if (!IsModelPrecached(model))  {
+                    PrecacheModel(model);
+                }   
+            SetEntityModel(ent, model); 
 
             // set scale if available
             if (modelscale > 0.0)
@@ -927,8 +964,9 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
                 float dt = UPDATE_INTERVAL;
                 float tpos[3]; tpos[0] = x; tpos[1] = y; tpos[2] = z;
                 float tang[3]; tang[0] = pitch; tang[1] = yaw; tang[2] = roll;
+                float velpos[3]; velpos[0] = velx; velpos[1] = vely; velpos[2] = velz;
 
-                SafeTeleportSchedule(ent, tpos, tang, NULL_VECTOR);
+                SafeTeleportSchedule(ent, tpos, tang, velpos);
 
                 // update stored pos to target (not interpolated) so next interpolation is correct
                 gPlayerPos2[idx][0] = x; gPlayerPos2[idx][1] = y; gPlayerPos2[idx][2] = z;
@@ -939,7 +977,7 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
                     SetEntPropFloat(ent, Prop_Send, "m_flModelScale", modelscale);
                 }
 
-                SetEntityModel(ent, "models/characters/hostage_01.mdl"); 
+                SetEntityModel(ent, model); 
                 activePlayers2[idx] = true;
             }
         }
@@ -1489,11 +1527,6 @@ stock bool:IsValidClient(iClient)
         ReplaceString(sample, sizeof(sample), "\\", "/", false);       
         ReplaceString(sample, sizeof(sample), "~", "", false);       
         ReplaceString(sample, sizeof(sample), "+", "", false);       
-        if (StrContains(g_szLastGlobalSound, sample, false) != -1)
-        {
-            // Same sample globally within dedup interval — skip POST
-            return Plugin_Continue;
-        } 
         // Build JSON body manually
         char json[1024];
         Format(json, sizeof(json),"{\"event\":\"sound\",\"sound\":{\"sound\":\"%s\",\"volume\":%.2f,\"pitch\":%d,\"level\":%d,\"pos\":\"[%.2f %.2f %.2f]\",\"name\":\"worldspawn\"}}",sample, volume, pitch, level, origin[0], origin[1], origin[2]);
@@ -1842,7 +1875,7 @@ public int OnHTTPResponse4(Handle hRequest, bool bFailure, bool bRequestSuccessf
 
         ExtractJSONString(entry, "model", model, sizeof(model));
         ExtractJSONString(entry, "weapon_model", weaponModel, sizeof(weaponModel));
-        if (StrContains(model,"custom",false) != -1) break;
+        if (StrContains(model,"ct_sas",false) != -1 || StrContains(model,"t_phoenix",false) != -1) break;
         x = ExtractJSONFloat(entry, "x");
         y = ExtractJSONFloat(entry, "y");
         z = ExtractJSONFloat(entry, "z");

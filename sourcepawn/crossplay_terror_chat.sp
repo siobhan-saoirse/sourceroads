@@ -6,7 +6,7 @@
 
 #define CHAT_POST_URL "http://26.158.225.149:7000/chat"
 #define CHAT_GET_URL  "http://26.158.225.149:7000/chat"
-#define GAME_NAME     "HL2DM"
+#define GAME_NAME     "L4D2"
 
 public void OnPluginStart()
 {
@@ -37,7 +37,7 @@ public void OnPlayerSay(Handle event, const char[] name, bool dontBroadcast)
     // Escape quotes for safe JSON (replace " with ')
 
     char json[1024];
-    Format(json, sizeof(json), "{\"name\":\"[HL2DM] %s\",\"text\":\"%s\"}", playerName, text);
+    Format(json, sizeof(json), "{\"name\":\"[L4D2] %s\",\"text\":\"%s\"}", playerName, text);
 
     Handle req = SteamWorks_CreateHTTPRequest(k_EHTTPMethodPOST, CHAT_POST_URL);
     if (req == INVALID_HANDLE) return;

@@ -834,7 +834,7 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
                 char classname[64];
                 GetEntityClassname(i, classname, sizeof(classname));
 
-                if (StrEqual(classname, "prop_dynamic_override"))
+                if (StrEqual(classname, "hostage_entity"))
                 {
                     char existingName[64];
                     GetEntPropString(i, Prop_Data, "m_iName", existingName, sizeof(existingName));
@@ -854,7 +854,7 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
             if (ent == 0)
             {
                 // No existing entity, create a new one
-                ent = CreateEntityByName("prop_dynamic_override");
+                ent = CreateEntityByName("hostage_entity");
                 if (ent <= 0)
                 {
                     PrintToServer("[SYNC] CreateEntityByName failed for '%s' (ent=%d)", name, ent);
@@ -865,16 +865,19 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
                 Format(npcTargetName, sizeof(npcTargetName), "tf_%s_%d", name, gUniqueNPCounter++);
                 // Assign a unique targetname so we can find/reuse it later
                 DispatchKeyValue(ent, "targetname", npcTargetName); 
-                DispatchKeyValue(ent, "health", "9999999");
                 // Use kleiner as default until model provided
                 if (!IsModelPrecached(model))  {
                     PrecacheModel(model);
                 }
                 SetEntityModel(ent, model);
+                SetEntProp(ent, Prop_Data, "m_iHealth", 99999999);
+                SetEntProp(ent, Prop_Send, "m_iHealth", 99999999);
                         if (idx == -1)
                         {
                             idx = ent;
                         }
+                        DispatchSpawn(ent)
+                        ActivateEntity(ent)
             }
 
             // set solid type & clientside animation (only once; avoid repeating to reduce flicker)

@@ -10,12 +10,13 @@
 #define SOUND_URL_1 "http://localhost:6004/sound"
 #define SOUND_URL_2 "http://localhost:2637/sound"
 #define SOUND_URL_3 "http://localhost:6005/sound"
+#define SOUND_URL_4 "http://localhost:7001/sound"
 #define SOUND_CHECK_INTERVAL 0.1
 #define UPDATE_INTERVAL 0.1
 #define INTERP_SPEED 50.0
 #define MAX_SPEED 300.0
 #define MAX_PLAYERS 4096
-#define MAX_PROPS 256   
+#define MAX_PROPS 4096   
 #define MAX_NAME_LEN 64
 #define MAX_MODEL_LEN PLATFORM_MAX_PATH
 char g_szLastGlobalSound[PLATFORM_MAX_PATH];
@@ -67,6 +68,9 @@ float gPendingPos[MAX_PENDING_TELEPORTS][3];
 float gPendingAng[MAX_PENDING_TELEPORTS][3];
 float gPendingVel[MAX_PENDING_TELEPORTS][3];
 bool gPendingUsed[MAX_PENDING_TELEPORTS];
+Handle g_hLookupSequence;
+
+static Handle g_hSDKCallPlaySpecificSequence;
 
 stock int _FindFreePendingSlot()
 {
@@ -371,8 +375,28 @@ int ExtractJSONInt(const char[] json, const char[] key)
 // --- Plugin lifecycle ---
 public void OnPluginStart()
 {
+	Handle hConf = LoadGameConfigFile("tf2.footsteps");
+
+	if(hConf == null)
+	   SetFailState("Failed to load gamedata.");
+	StartPrepSDKCall(SDKCall_Player);
+	PrepSDKCall_SetFromConf(hConf, SDKConf_Signature, "CTFPlayer::PlaySpecificSequence");
+	PrepSDKCall_AddParameter(SDKType_String, SDKPass_Pointer);
+	PrepSDKCall_SetReturnInfo(SDKType_Bool, SDKPass_Plain);
+	g_hSDKCallPlaySpecificSequence = EndPrepSDKCall();
+	if (!g_hSDKCallPlaySpecificSequence)
+		LogMessage("Failed to create call: CTFPlayer::PlaySpecificSequence");
+    
+	delete hConf;
     // leave empty 4 now
 	AddNormalSoundHook(CritWeaponSH);
+	AddNormalSoundHook(CritWeaponSH2);
+}
+
+
+bool SDKCall_PlaySpecificSequence(int iClient, const char[] sAnimationName)
+{
+	return SDKCall(g_hSDKCallPlaySpecificSequence, iClient, sAnimationName);
 }
 
 // --- Plugin start ---
@@ -775,6 +799,7 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
         char model[MAX_MODEL_LEN]; model[0] = '\0';
         char weaponModel[MAX_MODEL_LEN]; weaponModel[0] = '\0';
         float x = 0.0, y = 0.0, z = 0.0;
+        float velx = 0.0, vely = 0.0, velz = 0.0;
         float pitch = 0.0, yaw = 0.0, roll = 0.0;
         int skin = 0, animation = 0;
         int sequence = 0;
@@ -824,7 +849,7 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
                 char classname[64];
                 GetEntityClassname(i, classname, sizeof(classname));
 
-                if (StrEqual(classname, "prop_dynamic_override"))
+                if (StrEqual(classname, "base_boss"))
                 {
                     char existingName[64];
                     GetEntPropString(i, Prop_Data, "m_iName", existingName, sizeof(existingName));
@@ -844,7 +869,7 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
             if (ent == 0)
             {
                 // No existing entity, create a new one
-                ent = CreateEntityByName("prop_dynamic_override");
+                ent = CreateEntityByName("base_boss");
                 if (ent <= 0)
                 {
                     PrintToServer("[SYNC] CreateEntityByName failed for '%s' (ent=%d)", name, ent);
@@ -865,6 +890,8 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
                         {
                             idx = ent;
                         }
+                DispatchSpawn(ent)
+                ActivateEntity(ent)
             }
 
             // set solid type & clientside animation (only once; avoid repeating to reduce flicker)
@@ -1305,6 +1332,7 @@ public int OnHTTPSoundResponse(Handle hRequest, bool bFailure, bool bRequestSucc
         }
 
         // --- Play sound ---
+        if (StrContains(sound, "underwater", false) != -1) continue;
         EmitAmbientSound(sound, pos, SOUND_FROM_WORLD, level, _, 1.0, pitch);
     }
 
@@ -1478,25 +1506,74 @@ stock bool:IsValidClient(iClient)
             return Plugin_Continue;
         if (StrContains(sample, "cpoint_klaxon", false) != -1)
             return Plugin_Continue;
-        if (StrContains(sample, "mvm", false) != -1)
+        if (StrContains(sample, "minigun", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "flamethrower", false) != -1)
             return Plugin_Continue;
         if (volume == 0.0)
             return Plugin_Continue;
         float origin[3];
         GetClientAbsOrigin(entity, origin);
 
-        ReplaceString(sample, sizeof(sample), "\\", "/", false);       
-        if (StrContains(g_szLastGlobalSound, sample, false) != -1)
-        {
-            // Same sample globally within dedup interval — skip POST
-            return Plugin_Continue;
-        } 
+        ReplaceString(sample, sizeof(sample), "\\", "/", false);    
         // Build JSON body manually
         char json[1024];
         Format(json, sizeof(json),"{\"event\":\"sound\",\"sound\":{\"sound\":\"%s\",\"volume\":%.2f,\"pitch\":%d,\"level\":%d,\"pos\":\"[%.2f %.2f %.2f]\",\"name\":\"worldspawn\"}}",sample, volume, pitch, level, origin[0], origin[1], origin[2]);
 
         // Send to both endpoints
         SendSoundHTTP(SOUND_URL_1, json);
+
+        strcopy(g_szLastGlobalSound, sizeof(g_szLastGlobalSound), sample);
+        return Plugin_Continue;
+    }
+
+    // --- SOUND EMIT CALLBACK ---
+    public Action:CritWeaponSH2(clients[64], &numClients, String:sample[PLATFORM_MAX_PATH], &entity, &channel, &Float:volume, &level, &pitch, &flags)
+    {
+        int client = entity;
+        if (!IsValidClient(entity))
+            return Plugin_Continue;
+
+        char classname[64];
+        GetEntityClassname(entity, classname, sizeof(classname));
+
+        // Filtering logic
+        if (StrContains(classname, "crossplay_prop", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "loop", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "growl_high", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "growl_idle", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "confused1", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "rocket1", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "pulsemachine", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "v8/", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "jalopy/", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "ambient", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "cpoint_klaxon", false) != -1)
+            return Plugin_Continue;
+        if (StrContains(sample, "mvm", false) != -1 && StrContains(sample, "vo/", false) == -1)
+            return Plugin_Continue;
+        if (volume == 0.0)
+            return Plugin_Continue;
+        float origin[3];
+        GetClientAbsOrigin(entity, origin);
+
+        ReplaceString(sample, sizeof(sample), "\\", "/", false); 
+        // Build JSON body manually
+        char json[1024];
+        Format(json, sizeof(json),"{\"event\":\"sound\",\"sound\":{\"sound\":\"%s\",\"volume\":%.2f,\"pitch\":%d,\"level\":%d,\"pos\":\"[%.2f %.2f %.2f]\",\"name\":\"worldspawn\"}}",sample, volume, pitch, level, origin[0], origin[1], origin[2]);
+
+        // Send to both endpoints
+        SendSoundHTTP(SOUND_URL_4, json);
 
         strcopy(g_szLastGlobalSound, sizeof(g_szLastGlobalSound), sample);
         return Plugin_Continue;
@@ -1540,7 +1617,7 @@ public int OnHTTPResponse3(Handle hRequest, bool bFailure, bool bRequestSuccessf
     }
 
     // cap to buffer size to avoid overflow
-    char body[8192];
+    char body[32768];
     int maxBody = sizeof(body) - 1;
     if (bodysize > maxBody)
     {
@@ -1613,7 +1690,8 @@ public int OnHTTPResponse3(Handle hRequest, bool bFailure, bool bRequestSuccessf
         yaw = ExtractJSONFloat(entry, "yaw");
         roll = ExtractJSONFloat(entry, "roll");
         skin = ExtractJSONInt(entry, "skin");
-        animation = ExtractJSONInt(entry, "animation");
+        animation = ExtractJSONInt(entry, "sequence");
+        int team = ExtractJSONInt(entry, "team");
 
         // optional scale key (key name "scale" used by GMod; accept both)
         float maybeScale = ExtractJSONFloat(entry, "scale");
@@ -1645,7 +1723,7 @@ public int OnHTTPResponse3(Handle hRequest, bool bFailure, bool bRequestSuccessf
                 char classname[64];
                 GetEntityClassname(i, classname, sizeof(classname));
 
-                if (StrEqual(classname, "prop_dynamic_override"))
+                if (StrEqual(classname, "base_boss"))
                 {
                     char existingName[64];
                     GetEntPropString(i, Prop_Data, "m_iName", existingName, sizeof(existingName));
@@ -1665,7 +1743,7 @@ public int OnHTTPResponse3(Handle hRequest, bool bFailure, bool bRequestSuccessf
             if (ent == 0)
             {
                 // No existing entity, create a new one
-                ent = CreateEntityByName("prop_dynamic_override");
+                ent = CreateEntityByName("base_boss");
                 if (ent <= 0)
                 {
                     PrintToServer("[SYNC] CreateEntityByName failed for '%s' (ent=%d)", name, ent);
@@ -1683,13 +1761,11 @@ public int OnHTTPResponse3(Handle hRequest, bool bFailure, bool bRequestSuccessf
                         {
                             idx = ent;
                         }
-            }
+                DispatchSpawn(ent);
+                ActivateEntity(ent);
+            }   
 
-            // set solid type & clientside animation (only once; avoid repeating to reduce flicker)
-            SetEntProp(ent, Prop_Send, "m_nSolidType", 2);
-            SetEntProp(ent, Prop_Data, "m_nSolidType", 2);
             SetEntProp(ent, Prop_Send, "m_bClientSideAnimation", true);
-
             float tpos[3]; tpos[0] = x; tpos[1] = y; tpos[2] = z;
             float tang[3]; tang[0] = pitch; tang[1] = yaw; tang[2] = roll;
             SafeTeleportSchedule(ent, tpos, tang, NULL_VECTOR);
@@ -1700,6 +1776,7 @@ public int OnHTTPResponse3(Handle hRequest, bool bFailure, bool bRequestSuccessf
                 SetEntPropFloat(ent, Prop_Send, "m_flModelScale", modelscale);
             }
 
+            SetEntProp(ent, Prop_Data, "m_iTeamNum", team);
             if (animation > 0)
             {
                 int curSeq = GetEntProp(ent, Prop_Send, "m_nSequence");

@@ -825,7 +825,7 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
                 char classname[64];
                 GetEntityClassname(i, classname, sizeof(classname));
 
-                if (StrEqual(classname, "prop_dynamic_override"))
+                if (StrEqual(classname, "generic_actor"))
                 {
                     char existingName[64];
                     GetEntPropString(i, Prop_Data, "m_iName", existingName, sizeof(existingName));
@@ -845,7 +845,7 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
             if (ent == 0)
             {
                 // No existing entity, create a new one
-                ent = CreateEntityByName("prop_dynamic_override");
+                ent = CreateEntityByName("generic_actor");
                 if (ent <= 0)
                 {
                     PrintToServer("[SYNC] CreateEntityByName failed for '%s' (ent=%d)", name, ent);
@@ -866,6 +866,8 @@ public int OnHTTPResponse2(Handle hRequest, bool bFailure, bool bRequestSuccessf
                         {
                             idx = ent;
                         }
+                DispatchSpawn(ent);
+                ActivateEntity(ent);
             }
 
             // set solid type & clientside animation (only once; avoid repeating to reduce flicker)

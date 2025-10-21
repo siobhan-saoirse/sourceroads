@@ -21,7 +21,8 @@ new Float:gTraceDamage[MAX_TRACES];
 new Float:gTraceHitPosX[MAX_TRACES];
 new Float:gTraceHitPosY[MAX_TRACES];
 new Float:gTraceHitPosZ[MAX_TRACES];    
-#define CHAT_POST_URL "http://localhost:7000/chat" // People keep confusing the old ip with a Department of Defense IP. This was a Radmin VPN ip address.
+#define CHAT_POST_URL "http://localhost:7000/chat"
+bool g_bIsThinkingTF = false;
 
 new gTraceCount = 0;
 
@@ -42,6 +43,12 @@ public void OnPluginStart()
 
     delete hGameData;
     HookEvent("player_spawn", OnPlayerSpawn, EventHookMode_Post);
+	for (new iClient = 1; iClient <= MaxClients; iClient++)
+	{
+		if (IsValidEntity(iClient) && !IsClientSourceTV(iClient) && !IsClientReplay(iClient)) {
+			OnClientPutInServer(iClient);
+		}
+	}
 }
 
 public Action Command_Fly(int client, int args)
@@ -64,15 +71,26 @@ public void OnPlayerSpawn(Handle event, const char[] name, bool dontBroadcast)
     int client = GetClientOfUserId(GetEventInt(event, "userid"));
     if (!IsClientInGame(client)) return;
 }
-
+public OnClientPutInServer(int client) {
+    if (!g_bIsThinkingTF) {
+        SDKHook(client, SDKHook_PreThink, SDKHooks_OnPreThink);
+        g_bIsThinkingTF = true;
+    }
+}
+public OnClientDisconnect(iClient)
+{
+    if (g_bIsThinkingTF) {
+        g_bIsThinkingTF = false;
+    }   
+}
 public void OnMapStart()
 {
     //PrintToServer("[Socket.IO] Position sync started"); 
-    CreateTimer(0.1, Timer_SendAllPlayers, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-    //CreateTimer(0.1, TraceAttackGETTimer, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+    CreateTimer(0.03, Timer_SendAllPlayers, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+    CreateTimer(0.1, TraceAttackGETTimer, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 }
 
-public Action Timer_SendAllPlayers(Handle timer)
+public SDKHooks_OnPreThink(iClient)
 {
     char json[MAX_JSON_LEN];
     json[0] = '\0';
@@ -91,6 +109,9 @@ public Action Timer_SendAllPlayers(Handle timer)
         GetClientAbsOrigin(client, pos);
         GetClientAbsAngles(client, ang);
 
+        float vel[3];
+        GetEntPropVector(client, Prop_Data, "m_vecVelocity", vel);
+
         char name[MAX_NAME_LENGTH];
         GetClientName(client, name, sizeof(name));
 
@@ -98,6 +119,7 @@ public Action Timer_SendAllPlayers(Handle timer)
         GetClientModel(client, model, sizeof(model));
 
         int skin = GetEntProp(client, Prop_Send, "m_nSkin");
+        int health = GetEntProp(client, Prop_Send, "m_iHealth");
         int seq = GetEntProp(client, Prop_Send, "m_nSequence");
         char anim[16];
         IntToString(seq, anim, sizeof(anim));
@@ -123,12 +145,13 @@ public Action Timer_SendAllPlayers(Handle timer)
         
         char entry[1024];
         Format(entry, sizeof(entry),
-            "%s{\"name\":\"%s\",\"team\":%d,\"x\":%.2f,\"y\":%.2f,\"z\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"roll\":%.2f,\"model\":\"%s\",\"skin\":%d,\"animation\":\"%s\",\"weapon_model\":\"%s\",\"scale\":%.2f,\"scene\":\"%s\"}",
+            "%s{\"name\":\"%s\",\"team\":%d,\"x\":%.2f,\"y\":%.2f,\"z\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"roll\":%.2f,\"velx\":%.2f,\"vely\":%.2f,\"velz\":%.2f,\"model\":\"%s\",\"skin\":%d,\"animation\":%i,\"weapon_model\":\"%s\",\"scale\":%.2f,\"scene\":\"%s\",\"health\":%d}",
             first ? "" : ",",
             name, GetClientTeam(client),
             pos[0], pos[1], pos[2],
             ang[0], ang[1], ang[2],
-            model, skin, anim, weaponModel, scale, sceneName
+            vel[0], vel[1], vel[2],
+            model, skin, seq, weaponModel, scale, sceneName, health
         );
 
         StrCat(json, sizeof(json), entry);
@@ -150,6 +173,10 @@ public Action Timer_SendAllPlayers(Handle timer)
     SteamWorks_SetHTTPRequestRawPostBody(hRequest, "application/json", json, strlen(json));
     SteamWorks_SetHTTPCallbacks(hRequest, OnHTTPResponse);
     SteamWorks_SendHTTPRequest(hRequest);
+}
+
+public Action Timer_SendAllPlayers(Handle timer)
+{
     return Plugin_Continue;
 }
 

@@ -4,8 +4,8 @@
 #include <steamworks>
 
 
-#define CHAT_POST_URL "http://localhost:7000/chat" // People keep confusing the old ip with a Department of Defense IP. This was a Radmin VPN ip address.
-#define CHAT_GET_URL  "http://localhost:7000/chat" // People keep confusing the old ip with a Department of Defense IP. This was a Radmin VPN ip address.
+#define CHAT_POST_URL "http://26.158.225.149:7000/chat"
+#define CHAT_GET_URL  "http://26.158.225.149:7000/chat"
 #define GAME_NAME     "TF2"
 
 public void OnPluginStart()
@@ -121,6 +121,7 @@ public int OnChatResponse(Handle request, bool bFailure, bool bRequestSuccessful
         
         PrintToChatAll("%s: %s", name, text);
         EmitSoundToAll("ambient/levels/canals/windchime5.wav")
+		VoiceWareToAll("en", text);
 
         // Move the position past this message for next iteration
         pos = textStart + textEnd + 1;
@@ -129,3 +130,39 @@ public int OnChatResponse(Handle request, bool bFailure, bool bRequestSuccessful
     CloseHandle(request);
     return 0;
 }
+
+
+/**
+ * Sent text to speech to a client
+ *
+ * @param client            Client target.
+ * @param language           Language of voice.
+ * @param text            Text to reproduce.
+ *                
+ */
+stock void VoiceWare(int client, char[] language, char[] text) 
+{
+    ReplaceString(text, 255, "&", ""); // prevent error
+    char buffer[255];
+    Format(buffer, sizeof(buffer), "https://api.streamelements.com/kappa/v2/speech?text=%s&voice=Matthew", text);
+    Handle Radio = CreateKeyValues("data");
+    KvSetString(Radio, "title", "Voice Ware");
+    KvSetString(Radio, "type", "2");
+    KvSetString(Radio, "msg", buffer);
+    ShowVGUIPanel(client, "info", Radio, false);
+    CloseHandle(Radio);
+}
+
+/**
+ * Sent text to speech to all clients
+ *
+ * @param language           Language of voice.
+ * @param text            Text to reproduce.
+ *                
+ */
+stock void VoiceWareToAll(char[] language, char[] text) 
+{
+    for (int i = 1; i <= MaxClients; i++)
+        if(IsClientInGame(i) && (GetClientTeam(i) == 2 || GetClientTeam(i) == 3))
+            VoiceWare(i, language, text); 
+}  

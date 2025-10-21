@@ -1823,7 +1823,7 @@ public int OnHTTPResponse4(Handle hRequest, bool bFailure, bool bRequestSuccessf
 
         ExtractJSONString(entry, "model", model, sizeof(model));
         ExtractJSONString(entry, "weapon_model", weaponModel, sizeof(weaponModel));
-        if (StrContains(model,"player",false) == -1) break;
+        if (StrContains(model,"player",false) == -1 || StrContains(model,"npc.mdl",false) != -1) break;
         x = ExtractJSONFloat(entry, "x");
         y = ExtractJSONFloat(entry, "y");
         z = ExtractJSONFloat(entry, "z");

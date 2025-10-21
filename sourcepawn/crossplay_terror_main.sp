@@ -3,7 +3,7 @@
 #include <sdkhooks>
 #include <steamworks>
 
-#define SOCKET_URL "http://localhost:2635/update_css"
+#define SOCKET_URL "http://localhost:6003/update"
 #define MAX_JSON_LEN 32768
 #define MAX_SCENE_NAME 128
 char g_sceneVcd[128][MAXPLAYERS + 1];
@@ -27,7 +27,7 @@ new gTraceCount = 0;
 Handle gH_GetWorldModel = null;
 
 public void OnPluginStart()
-{
+{   
 }
 
 public void OnMapStart()
@@ -62,7 +62,7 @@ public Action Timer_SendAllPlayers(Handle timer)
 
     for (int client = 1; client <= MaxClients; client++)
     {
-        if (!IsClientInGame(client))
+        if (!IsClientInGame(client) || !(GetClientTeam(client) == 2 || GetClientTeam(client) == 3))
             continue;
 
         float pos[3], ang[3];
@@ -71,9 +71,11 @@ public Action Timer_SendAllPlayers(Handle timer)
 
         char name[MAX_NAME_LENGTH];
         GetClientName(client, name, sizeof(name));
+        float vel[3];
+        GetEntPropVector(client, Prop_Data, "m_vecVelocity", vel);
 
         char name2[MAX_NAME_LENGTH];
-        Format(name2, sizeof(name2), "dod_%s", name);
+        Format(name2, sizeof(name2), "terror_%s", name);
 
         char model[PLATFORM_MAX_PATH];
         GetClientModel(client, model, sizeof(model));
@@ -101,13 +103,57 @@ public Action Timer_SendAllPlayers(Handle timer)
 
         char entry[1024];
             Format(entry, sizeof(entry),
-                "%s{\"name\":\"%s\",\"team\":%d,\"x\":%.2f,\"y\":%.2f,\"z\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"roll\":%.2f,\"model\":\"%s\",\"skin\":%d,\"animation\":\"%s\",\"weapon_model\":\"%s\",\"scale\":%.2f,\"scene\":\"%s\",\"sequence\":%d}",
+                "%s{\"name\":\"%s\",\"team\":%d,\"x\":%.2f,\"y\":%.2f,\"z\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"roll\":%.2f,\"velx\":%.2f,\"vely\":%.2f,\"velz\":%.2f,\"model\":\"%s\",\"skin\":%d,\"animation\":\"%s\",\"weapon_model\":\"%s\",\"scale\":%.2f,\"scene\":\"%s\",\"sequence\":%d}",
                 first ? "" : ",",
                 name2, GetClientTeam(client),
                 pos[0], pos[1], pos[2],
                 ang[0], ang[1], ang[2],
+                vel[0], vel[1], vel[2],
                 model, skin, anim, "models/empty.mdl", scale, sceneName, curSeq
             );
+
+        StrCat(json, sizeof(json), entry);
+        first = false;
+        playerCount++;
+    }
+
+    // --- Network "infected" and "witch" entities as well ---
+    int maxEnts = GetMaxEntities();
+    for (int ent = 0; ent <= maxEnts; ent++)
+    {
+        if (!IsValidEntity(ent))
+            continue;
+
+        char classname[64];
+        GetEntityClassname(ent, classname, sizeof(classname));
+        if (!StrEqual(classname, "infected") && !StrEqual(classname, "witch"))
+            continue;
+
+        float pos[3], ang[3], vel[3];
+        GetEntPropVector(ent, Prop_Data, "m_vecOrigin", pos);
+        GetEntPropVector(ent, Prop_Data, "m_angRotation", ang);
+
+        char model[PLATFORM_MAX_PATH];
+        GetEntPropString(ent, Prop_Data, "m_ModelName", model, sizeof(model));
+
+        int skin = GetEntProp(ent, Prop_Send, "m_nSkin");
+        int seq = GetEntProp(ent, Prop_Send, "m_nSequence");
+        char anim[16];
+        IntToString(seq, anim, sizeof(anim));
+
+        float scale = GetEntPropFloat(ent, Prop_Send, "m_flModelScale");
+
+        char entry[1024];
+        Format(entry, sizeof(entry),
+            "%s{\"name\":\"infected_%d\",\"team\":3,\"x\":%.2f,\"y\":%.2f,\"z\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"roll\":%.2f,\"velx\":%.2f,\"vely\":%.2f,\"velz\":%.2f,\"model\":\"%s\",\"skin\":%d,\"animation\":\"%s\",\"weapon_model\":\"%s\",\"scale\":%.2f,\"scene\":\"\",\"sequence\":%d}",
+            first ? "" : ",",
+            ent,
+            pos[0], pos[1], pos[2],
+            ang[0], ang[1], ang[2],
+            0.0, 0.0, 0.0   ,
+            "models/player/scout.mdl", skin, anim,
+            "models/empty.mdl", scale, 0
+        );
 
         StrCat(json, sizeof(json), entry);
         first = false;
@@ -236,7 +282,7 @@ public Action TraceAttackPOSTTimer(Handle timer)
 
     return Plugin_Continue;
 }
-#define TRACE_RADIUS 100.0
+#define TRACE_RADIUS 20.0
 
 public Action TraceAttackGETTimer(Handle timer)
 {
@@ -343,20 +389,32 @@ public int OnTraceGetResponse(Handle hRequest, bool bFailure, bool bRequestSucce
     //PrintToServer("Parsed hitpos: %.2f, %.2f, %.2f | damage: %.2f", hitpos[0], hitpos[1], hitpos[2], damage);
 
     // --- Apply AoE damage (keep c, c, c) ---
-    for (int c = 1; c <= MaxClients; c++)
+
+    for (int ent = 1; ent <= GetMaxEntities(); ent++)
     {
-        if (!IsClientInGame(c)) continue;
+        if (!IsValidEntity(ent))
+            continue;
 
-        float pPos[3];
-        GetClientAbsOrigin(c, pPos);
-        float dist = GetVectorDistance(pPos, hitpos);
-        //PrintToServer("Distance to client %d: %.2f", c, dist);
+        // Ignore worldspawn and similar invalid types
+        char classname[64];
+        GetEntityClassname(ent, classname, sizeof(classname));
+        if (StrEqual(classname, "worldspawn") || StrEqual(classname, "player_manager"))
+            continue;
 
+        float ePos[3];
+        GetEntPropVector(ent, Prop_Send, "m_vecOrigin", ePos);
+
+        float dist = GetVectorDistance(ePos, hitpos);
         if (dist <= TRACE_RADIUS)
         {
-            SDKHooks_TakeDamage(c, 0, 0, damage, DMG_BULLET);
+            // Optional: only damage entities that can actually take damage
+            if (GetEntProp(ent, Prop_Data, "m_takedamage") != 0)
+            {
+                SDKHooks_TakeDamage(ent, ent, ent, damage, DMG_BULLET);
+            }
         }
     }
+
 
     CloseHandle(hRequest);
     return 0;

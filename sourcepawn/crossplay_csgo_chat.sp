@@ -4,8 +4,8 @@
 #include <steamworks>
 
 
-#define CHAT_POST_URL "http://localhost:7000/chat" // People keep confusing the old ip with a Department of Defense IP. This was a Radmin VPN ip address.
-#define CHAT_GET_URL  "http://localhost:7000/chat" // People keep confusing the old ip with a Department of Defense IP. This was a Radmin VPN ip address.
+#define CHAT_POST_URL "http://26.158.225.149:7000/chat"
+#define CHAT_GET_URL  "http://26.158.225.149:7000/chat"
 #define GAME_NAME     "CS:GO"
 
 public void OnPluginStart()
