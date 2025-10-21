@@ -15,6 +15,8 @@ Not much right now, games can connect fine for the most part and you can see and
 * [x] Connect and network multiple game servers
 * [x] See other players in real time.
 * [ ] Interact with players (damage, contact, etc).
+- * [x] CS:GO (tf2 players only)
+- * [ ] Other Source Games
 * [x] Communicate via Text Chat
 * [ ] Communicate via Voice Chat
 * [ ] See props/objects from other games.
