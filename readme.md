@@ -26,6 +26,10 @@ Not much right now, games can connect fine for the most part and you can see and
 
 If you have a good understanding of source and sourcemod scripting (sourcepawn), or a good understanding of JavaScript. Feel free to make changes or updates to the project and create a pull request.
 
+## Why are you using the 26.x.x.x IPs?
+
+That's my local Radmin VPN ip address
+
 ## How to use
 
 TBA
