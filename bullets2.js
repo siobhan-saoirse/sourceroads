@@ -237,3 +237,4 @@ app.get("/chat", (req, res) => {
 app.use(express.static('./html'));
 
 server.listen(7001, () => console.log("Server running on http://localhost:7001"));
+ 
